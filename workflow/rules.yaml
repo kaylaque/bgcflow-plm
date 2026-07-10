@@ -259,3 +259,12 @@ amrfinderplus:
   - https://github.com/ncbi/amr
   references:
   - "Feldgarden M, Brover V, Gonzalez-Escalona N, Frye JG, Haendiges J, Haft DH, Hoffmann M, Pettengill JB, Prasad AB, Tillman GE, Tyson GH, Klimke W. AMRFinderPlus and the Reference Gene Catalog facilitate examination of the genomic links among antimicrobial resistance, stress response, and virulence. Sci Rep. 2021 Jun 16;11(1):12728. doi: 10.1038/s41598-021-91456-0. PMID: 34135355; PMCID: PMC8208984."
+plm-novelty:
+  final_output: data/processed/{name}/plm_novelty/region_novelty_summary.tsv
+  description: Retrieve MIBiG neighbors for antiSMASH BGC core proteins via frozen ESM2 embeddings; emit an auditable per-region novelty side-channel. Requires antiSMASH v7+.
+  category: Genome Mining
+  link:
+  - https://github.com/facebookresearch/esm
+  - https://mibig.secondarymetabolites.org
+  references:
+  - 'Lin, Z. et al. Evolutionary-scale prediction of atomic-level protein structure with a language model. Science 379, 1123-1130 (2023). doi:10.1126/science.ade2574'

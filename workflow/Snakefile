@@ -93,6 +93,7 @@ include: "rules/cblaster.smk"
 include: "rules/data_warehouse.smk"
 include: "rules/convert_genbank.smk"
 include: "rules/gecco.smk"
+include: "rules/plm_novelty.smk"
 include: "rules/amrfinderplus.smk"
 
 ##### 4. Generate user-defined local resources

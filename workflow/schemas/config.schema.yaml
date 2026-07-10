@@ -56,6 +56,27 @@ properties:
         type: boolean
       eggnog-roary:
         type: boolean
+      plm-novelty:
+        type: boolean
+
+  rule_parameters:
+    type: object
+    properties:
+      plm:
+        type: object
+        properties:
+          model:
+            type: string
+          batch_size:
+            type: integer
+          device:
+            type: string
+            enum: [auto, cpu, cuda]
+          top_k:
+            type: integer
+          distance_threshold:
+            type: number
+        additionalProperties: false
 
   resources_path:
     type: object

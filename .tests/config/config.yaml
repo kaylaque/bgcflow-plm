@@ -53,6 +53,7 @@ rules:
   deeptfactor-roary: FALSE
   cblaster-genome: FALSE
   cblaster-bgc: FALSE
+  plm-novelty: FALSE    # requires antiSMASH v7+; set TRUE to enable ESM2 novelty retrieval
 
 #### RESOURCES CONFIGURATION ####
 # resources : the location of the resources to run the rule.
@@ -72,6 +73,12 @@ resources_path:
 # - release 207, release_version r207_v2 --> https://data.gtdb.ecogenomic.org/releases/release207/207.0/auxillary_files/gtdbtk_r207_v2_data.tar.gz
 
 rule_parameters:
+  plm:
+    model: esm2_t30_150M_UR50D  # CPU-tractable default; swap to esm2_t33_650M_UR50D for GPU
+    batch_size: 8
+    device: auto                  # auto → cuda if available, else cpu
+    top_k: 10
+    distance_threshold: 0.5       # cosine distance; >0.5 → novelty_flag=True
   install_gtdbtk:
     release: "214.1"
     release_version: "r214"
