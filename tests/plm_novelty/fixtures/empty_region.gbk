@@ -1,0 +1,22 @@
+LOCUS       NODE_2.region001         150 bp    DNA     linear   BCT 01-JAN-2023
+DEFINITION  NODE_2 antiSMASH region 001 (no biosynthetic core).
+ACCESSION   NODE_2.region001
+VERSION     NODE_2.region001
+FEATURES             Location/Qualifiers
+     region          1..150
+                     /region_number="1"
+                     /product="terpene"
+                     /candidate_cluster_types="terpene"
+     CDS             1..75
+                     /protein_id="BBB00001.1"
+                     /gene_kind="biosynthetic-additional"
+                     /translation="MSTKHELL"
+     CDS             76..150
+                     /protein_id="BBB00002.1"
+                     /gene_kind="other"
+                     /translation="WORLDPROT"
+ORIGIN
+        1 atgagcacca agcatgaact gctctggcgc ttaggagctg gaatgagcac caagcatgaa
+       61 ctgctctggc gcttaggagc tggaatgagc accaagcatg aactgctctg gcgcttagga
+      121 gctggaatga gcaccaagca tgaa
+//

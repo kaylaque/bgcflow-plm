@@ -1,0 +1,27 @@
+LOCUS       NODE_1.region001         300 bp    DNA     linear   BCT 01-JAN-2023
+DEFINITION  NODE_1 antiSMASH region 001, from 1 to 300.
+ACCESSION   NODE_1.region001
+VERSION     NODE_1.region001
+FEATURES             Location/Qualifiers
+     region          1..300
+                     /region_number="1"
+                     /product="terpene"
+                     /candidate_cluster_types="terpene"
+     CDS             1..99
+                     /protein_id="AAA00001.1"
+                     /gene_kind="biosynthetic"
+                     /translation="MSTKHELLWORLD"
+     CDS             100..199
+                     /protein_id="AAA00002.1"
+                     /gene_kind="biosynthetic-additional"
+                     /translation="MSTKHELLWORLD2"
+     CDS             200..300
+                     /protein_id="AAA00003.1"
+                     /translation="MSTKHELLWORLD3"
+ORIGIN
+        1 atgagcacca agcatgaact gctctggcgc ttaggagctg gaatgagcac caagcatgaa
+       61 ctgctctggc gcttaggagc tggaatgagc accaagcatg aactgctctg gcgcttagga
+      121 gctggaatga gcaccaagca tgaactgctc tggcgcttag gagctggaat gagcaccaag
+      181 catgaactgc tctggcgctt aggagctgga atgagcacca agcatgaact gctctggcgc
+      241 ttaggagctg gaatgagcac caagcatgaa ctgctctggc gcttaggagc tggatcgact
+//

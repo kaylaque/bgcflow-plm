@@ -1,0 +1,24 @@
+LOCUS       BGC0000001               200 bp    DNA     linear   BCT 01-JAN-2023
+DEFINITION  BGC0000001 MIBiG cluster (minimal fixture).
+ACCESSION   BGC0000001
+VERSION     BGC0000001
+FEATURES             Location/Qualifiers
+     cluster         1..200
+                     /product="terpene"
+                     /mibig_accession="BGC0000001"
+     CDS             1..100
+                     /protein_id="BGC0000001_001"
+                     /gene_kind="biosynthetic"
+                     /product="terpene synthase"
+                     /translation="MFIXEDSEQALPHA"
+     CDS             101..200
+                     /protein_id="BGC0000001_002"
+                     /gene_kind="biosynthetic"
+                     /product="terpene cyclase"
+                     /translation="MFIXEDSEQBETA"
+ORIGIN
+        1 atgtttatca aagagctgat gcgcttaatg tttatcaaag agctgatgcg cttaatgttt
+       61 atcaaagagc tgatgcgctt aatgtttcgc ttaatgcgct taatgtttcg cttaatgcgc
+      121 ttaatgtttt atcaaagagc tgatgcgctt aatgttttat caaagagctg atgcgcttaa
+      181 tgtttcgctt aatgcgctta
+//

@@ -1,0 +1,24 @@
+LOCUS       BGC0000002               200 bp    DNA     linear   BCT 01-JAN-2023
+DEFINITION  BGC0000002 MIBiG cluster (minimal fixture).
+ACCESSION   BGC0000002
+VERSION     BGC0000002
+FEATURES             Location/Qualifiers
+     cluster         1..200
+                     /product="polyketide"
+                     /mibig_accession="BGC0000002"
+     CDS             1..100
+                     /protein_id="BGC0000002_001"
+                     /gene_kind="biosynthetic"
+                     /product="PKS"
+                     /translation="MPKSMODULEONE"
+     CDS             101..200
+                     /locus_tag="BGC0000002_B"
+                     /gene_kind="biosynthetic"
+                     /product="PKS KS domain"
+                     /translation="MPKSMODULETWO"
+ORIGIN
+        1 atgccgaagt cgatgcgctt aatgccgaag tcgatgcgct taatgccgaa gtcgatgcgc
+       61 ttaatgccga agtcgatgcg cttaatgccg aagtcgatgc gcttaatgcc gaagtcgatg
+      121 cgcttaatgc cgaagtcgat gcgcttaatg ccgaagtcga tgcgcttaat gccgaagtcg
+      181 atgcgcttaa tgccgaagtc
+//
