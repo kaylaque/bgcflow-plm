@@ -1,0 +1,16 @@
+name: plm_novelty
+channels:
+  - pytorch
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - pytorch-cpu
+  - faiss-cpu
+  - biopython
+  - pandas
+  - pyarrow
+  - numpy
+  - pip
+  - pip:
+      - fair-esm==2.0.0
