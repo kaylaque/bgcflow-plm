@@ -14,66 +14,55 @@ logging.basicConfig(
 )
 
 
-def _resolve_protein_id(feature):
-    for key in ("protein_id", "locus_tag", "gene"):
-        if key in feature.qualifiers:
-            return feature.qualifiers[key][0]
-    return None
-
-
 def extract_core_proteins_from_dir(mibig_dir):
     """
-    Walk mibig_dir for *.gbk files, extract biosynthetic-core CDS.
+    Parse mibig_dir/proteins.fasta (antiSMASH knownclusterblast reference DB),
+    which is what antismash_db_setup actually populates — not per-BGC *.gbk
+    files. Headers look like:
+        >{mibig_id}|{cluster_num}|{coord_range}|{strand}|{protein_id}|{product_desc}|{protein_id}
+
+    antiSMASH's knownclusterblast reference DB does not carry a gene_kind
+    ("biosynthetic" vs "transport"/"regulatory") annotation — that label only
+    exists on antiSMASH's own region GBK output, not on this static reference
+    catalogue. So every protein cataloged for a known cluster is used as the
+    MIBiG reference set (this matches what antiSMASH's own KnownClusterBlast
+    module compares against).
 
     Returns list of dicts: {mibig_id, protein_id, product_class, sequence, sequence_hash}
     """
     mibig_dir = Path(mibig_dir)
+    fasta_path = mibig_dir / "proteins.fasta"
     proteins = []
     seen_ids = set()
 
-    for gbk_path in sorted(mibig_dir.rglob("*.gbk")):
-        mibig_id = gbk_path.stem
-        logging.info(f"Scanning {gbk_path}")
-        with open(gbk_path) as fh:
-            for record in SeqIO.parse(fh, "genbank"):
-                product_class = "unknown"
-                for feat in record.features:
-                    if feat.type == "cluster" or feat.type == "region":
-                        product_class = feat.qualifiers.get("product", ["unknown"])[0]
-                        break
+    logging.info(f"Scanning {fasta_path}")
+    with open(fasta_path) as fh:
+        for record in SeqIO.parse(fh, "fasta"):
+            fields = record.id.split("|")
+            mibig_id = fields[0]
+            protein_id = fields[4] if len(fields) > 4 else record.id
+            product_class = fields[5] if len(fields) > 5 else "unknown"
 
-                for feature in record.features:
-                    if feature.type != "CDS":
-                        continue
-                    gene_kind = feature.qualifiers.get("gene_kind", [""])[0]
-                    if gene_kind != "biosynthetic":
-                        continue
+            translation = str(record.seq)
+            if not translation:
+                logging.warning(f"Record {record.id} has no sequence — skipping")
+                continue
 
-                    protein_id = _resolve_protein_id(feature)
-                    if protein_id is None:
-                        logging.warning(f"CDS in {gbk_path} has no identifier — skipping")
-                        continue
+            unique_key = f"{mibig_id}::{protein_id}"
+            if unique_key in seen_ids:
+                continue
+            seen_ids.add(unique_key)
 
-                    translation = feature.qualifiers.get("translation", [None])[0]
-                    if translation is None:
-                        logging.warning(f"CDS {protein_id} missing translation — skipping")
-                        continue
-
-                    unique_key = f"{mibig_id}::{protein_id}"
-                    if unique_key in seen_ids:
-                        continue
-                    seen_ids.add(unique_key)
-
-                    seq_hash = hashlib.md5(translation.encode()).hexdigest()
-                    proteins.append(
-                        {
-                            "mibig_id": mibig_id,
-                            "protein_id": protein_id,
-                            "product_class": product_class,
-                            "sequence": translation,
-                            "sequence_hash": seq_hash,
-                        }
-                    )
+            seq_hash = hashlib.md5(translation.encode()).hexdigest()
+            proteins.append(
+                {
+                    "mibig_id": mibig_id,
+                    "protein_id": protein_id,
+                    "product_class": product_class,
+                    "sequence": translation,
+                    "sequence_hash": seq_hash,
+                }
+            )
 
     return proteins
 
