@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. See `AGENTS.md` for the cross-tool router (per-system docs, coding conventions, test index, worksheets, task queue) — that file complements this one rather than duplicating it.
 
 ## What this is
 
