@@ -25,6 +25,22 @@ Reads antiSMASH region GBKs and the MIBiG `knownclusterblast` directory (already
 
 `plm_novelty.smk` requires antiSMASH v7+. If `antismash_major_version < 7`, the file registers no rules and emits a stderr warning instead — antiSMASH v6's `antismash_db_setup` doesn't expose a `knownclusterblast/4.0` directory to build the index from. This check lives at the top of the rule file, not inside individual rules.
 
+## Running it (SSH gotcha)
+
+`build_index()` in `build_mibig_esm2_index.py` has **no checkpointing** — it embeds all MIBiG core proteins (currently 39,992) in one pass and only writes `index.faiss`/`metadata.parquet`/`model_version.txt` at the very end. If the process is killed mid-run (e.g. an SSH session drops, which SIGHUPs a foreground job), **all progress is lost silently** — no partial output, no error, no Snakemake lock left behind, it just looks like the target was never built.
+
+Always run it detached so an SSH drop can't kill it:
+
+```bash
+tmux new -s plm_index
+snakemake --use-conda --cores 8 resources/mibig_esm2/index.faiss
+# Ctrl-b d to detach; tmux attach -t plm_index to check on it later
+```
+
+This targets `resources/mibig_esm2/index.faiss` directly, which works even when `rules.plm-novelty` is `FALSE` — that toggle only controls `rule all`'s default target set, not what you can request explicitly.
+
+The ESM2 checkpoint itself (`esm2_t30_150M_UR50D`) is a one-time download cached by `torch.hub` outside the repo (`~/.cache/torch/hub/checkpoints/`) — check there before assuming a slow first run is a re-download; `device: auto` in `rule_parameters.plm` will use a GPU if one is present on the host.
+
 ## Tests
 
 `tests/plm_novelty/` (see `docs/testing.md`) — includes a guard test (`test_no_upstream_dag_edit.py`) that must keep passing for any change here, since the side-channel's core invariant is that it never touches antiSMASH's own outputs.
