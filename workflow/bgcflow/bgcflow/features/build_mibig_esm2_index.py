@@ -1,11 +1,17 @@
 import argparse
 import hashlib
 import logging
+import shutil
+import sys as _sys
 from pathlib import Path
 
+import faiss
 import numpy as np
 import pandas as pd
 from Bio import SeqIO
+
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+from embed_esm2 import embed_sequences  # noqa: E402
 
 logging.basicConfig(
     format="%(levelname)-8s %(asctime)s   %(message)s",
@@ -67,24 +73,33 @@ def extract_core_proteins_from_dir(mibig_dir):
     return proteins
 
 
-def build_index(mibig_dir, output_dir, model_name="esm2_t30_150M_UR50D", batch_size=8, device="auto"):
+def build_index(
+    mibig_dir,
+    output_dir,
+    model_name="esm2_t30_150M_UR50D",
+    batch_size=8,
+    device="auto",
+    checkpoint_dir=None,
+):
     """
     Build FAISS index from MIBiG GBK files and save to output_dir.
+
+    Embedding progress is checkpointed to checkpoint_dir (default:
+    output_dir/.embed_checkpoint) so a killed/interrupted run — e.g. a
+    dropped SSH session — can be resumed by simply re-running with the same
+    output_dir. The checkpoint is scratch state: it's deleted once the build
+    finishes successfully.
 
     Writes:
       - index.faiss
       - metadata.parquet  (row order == FAISS row order)
       - model_version.txt
     """
-    import sys as _sys
-    from pathlib import Path as _Path
-    _sys.path.insert(0, str(_Path(__file__).resolve().parent))
-
-    import faiss
-    from embed_esm2 import embed_sequences  # noqa: E402
-
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if checkpoint_dir is None:
+        checkpoint_dir = output_dir / ".embed_checkpoint"
 
     proteins = extract_core_proteins_from_dir(mibig_dir)
     if not proteins:
@@ -92,8 +107,16 @@ def build_index(mibig_dir, output_dir, model_name="esm2_t30_150M_UR50D", batch_s
 
     logging.info(f"Found {len(proteins)} core proteins across MIBiG GBKs")
 
-    sequences = [(p["mibig_id"] + "::" + p["protein_id"], p["sequence"]) for p in proteins]
-    ids, vectors = embed_sequences(sequences, model_name=model_name, batch_size=batch_size, device=device)
+    sequences = [
+        (p["mibig_id"] + "::" + p["protein_id"], p["sequence"]) for p in proteins
+    ]
+    ids, vectors = embed_sequences(
+        sequences,
+        model_name=model_name,
+        batch_size=batch_size,
+        device=device,
+        checkpoint_dir=str(checkpoint_dir),
+    )
 
     dim = vectors.shape[1]
     index = faiss.IndexFlatIP(dim)
@@ -122,6 +145,8 @@ def build_index(mibig_dir, output_dir, model_name="esm2_t30_150M_UR50D", batch_s
     version_txt.write_text(f"model={model_name}\nfair-esm={esm_ver}\n")
     logging.info(f"Model version: {model_name} (fair-esm {esm_ver})")
 
+    shutil.rmtree(checkpoint_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -142,6 +167,12 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="esm2_t30_150M_UR50D", metavar="MODEL_ID")
     parser.add_argument("--batch-size", type=int, default=8, metavar="N")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    parser.add_argument(
+        "--checkpoint-dir",
+        default=None,
+        metavar="DIR",
+        help="Resume/checkpoint dir (default: <output-dir>/.embed_checkpoint)",
+    )
     args = parser.parse_args()
     build_index(
         args.mibig_dir,
@@ -149,4 +180,5 @@ if __name__ == "__main__":
         model_name=args.model,
         batch_size=args.batch_size,
         device=args.device,
+        checkpoint_dir=args.checkpoint_dir,
     )

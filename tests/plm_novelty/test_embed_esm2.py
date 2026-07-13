@@ -1,4 +1,6 @@
 """Tests for embed_esm2.py — ESM2 model is mocked (no torch/fair-esm in CI)."""
+
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,26 +11,28 @@ import pytest
 DIM = 8  # stub embedding dimension
 
 
-def _make_stub_model(dim=DIM):
-    """Return a mock (model, alphabet) pair emitting deterministic dim-vectors."""
+def _make_stub_model(dim=DIM, call_log=None):
+    """Return a mock (model, alphabet) pair emitting deterministic dim-vectors.
+
+    If call_log is given, each __call__ appends the batch's labels to it —
+    lets tests assert exactly which sequences were (re-)embedded.
+    """
     import types
 
     def batch_converter(batch):
+        import torch
+
         labels = [b[0] for b in batch]
         seqs = [b[1] for b in batch]
+        if call_log is not None:
+            call_log.append(list(labels))
         # fake tokens: shape (batch, len+2) filled with zeros
         max_len = max(len(s) for s in seqs) + 2
-        tokens = np.zeros((len(batch), max_len), dtype=np.int64)
+        tokens = torch.zeros((len(batch), max_len), dtype=torch.int64)
         return labels, seqs, tokens
 
     alphabet_mock = MagicMock()
     alphabet_mock.get_batch_converter.return_value = batch_converter
-
-    class FakeResult:
-        def __init__(self, n, length, dim):
-            arr = np.ones((n, length, dim), dtype=np.float32) * 0.5
-            import torch
-            self.representations = {1: torch.tensor(arr)}
 
     class FakeModel:
         num_layers = 1
@@ -40,10 +44,27 @@ def _make_stub_model(dim=DIM):
             return self
 
         def __call__(self, tokens, repr_layers=None):
+            import torch
+
             n, seq_len = tokens.shape
-            return FakeResult(n, seq_len, dim)
+            arr = torch.ones((n, seq_len, dim), dtype=torch.float32) * 0.5
+            return {"representations": {1: arr}}
 
     return FakeModel(), alphabet_mock
+
+
+def _write_checkpoint_shard(checkpoint_dir, shard_name, ids, vectors, model_name):
+    """Pre-populate a checkpoint dir as if a prior run wrote it, for resume tests."""
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        checkpoint_dir / shard_name,
+        ids=np.array(ids, dtype=object),
+        vectors=np.stack(vectors).astype(np.float32),
+    )
+    (checkpoint_dir / "manifest.json").write_text(
+        json.dumps({"model_name": model_name})
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -59,16 +80,13 @@ def mock_esm_load():
 
 def test_npz_keys_dtype_normalized(tmp_path):
     """Output .npz has keys 'ids' and 'vectors', float32, L2-normalized."""
-    import torch
-
     fasta = tmp_path / "test.faa"
     fasta.write_text(">seq1\nMFIXEDSEQ\n>seq2\nMANOTHERONE\n")
     out = tmp_path / "out.npz"
 
     from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_fasta_to_npz
 
-    with patch("workflow.bgcflow.bgcflow.features.embed_esm2.torch", torch):
-        embed_fasta_to_npz(str(fasta), str(out), model_name="stub", batch_size=8)
+    embed_fasta_to_npz(str(fasta), str(out), model_name="stub", batch_size=8)
 
     data = np.load(str(out), allow_pickle=True)
     assert set(data.files) >= {"ids", "vectors"}
@@ -93,16 +111,143 @@ def test_empty_fasta_writes_empty_npz(tmp_path):
 
 def test_batch_larger_than_record_count(tmp_path):
     """batch_size > len(sequences) must not crash."""
-    import torch
-
     fasta = tmp_path / "one.faa"
     fasta.write_text(">single\nMONLYONE\n")
     out = tmp_path / "one.npz"
 
     from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_fasta_to_npz
 
-    with patch("workflow.bgcflow.bgcflow.features.embed_esm2.torch", torch):
-        embed_fasta_to_npz(str(fasta), str(out), batch_size=100)
+    embed_fasta_to_npz(str(fasta), str(out), batch_size=100)
 
     data = np.load(str(out), allow_pickle=True)
     assert len(data["ids"]) == 1
+
+
+def test_resume_skips_already_checkpointed_sequences(tmp_path):
+    """A sequence already present in the checkpoint must not be re-embedded."""
+    from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_sequences
+
+    checkpoint_dir = tmp_path / "ckpt"
+    prechecked_vector = np.full(DIM, 0.25, dtype=np.float32)
+    prechecked_vector /= np.linalg.norm(prechecked_vector)
+    _write_checkpoint_shard(
+        checkpoint_dir,
+        "shard_000000.npz",
+        ids=["seq1"],
+        vectors=[prechecked_vector],
+        model_name="stub",
+    )
+
+    call_log = []
+    model, alphabet = _make_stub_model(call_log=call_log)
+    with patch(
+        "workflow.bgcflow.bgcflow.features.embed_esm2.load_esm_model",
+        return_value=(model, alphabet),
+    ):
+        ids, vectors = embed_sequences(
+            [("seq1", "MFIXEDSEQ"), ("seq2", "MANOTHERONE")],
+            model_name="stub",
+            batch_size=8,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+    all_embedded_labels = [label for batch in call_log for label in batch]
+    assert "seq1" not in all_embedded_labels, "already-checkpointed id was re-embedded"
+    assert "seq2" in all_embedded_labels
+
+    assert ids == ["seq1", "seq2"]
+    np.testing.assert_allclose(vectors[0], prechecked_vector, atol=1e-6)
+
+
+def test_resume_preserves_original_input_order(tmp_path):
+    """Output order must match input order, even when the middle id was checkpointed."""
+    from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_sequences
+
+    checkpoint_dir = tmp_path / "ckpt"
+    prechecked_vector = np.full(DIM, 0.25, dtype=np.float32)
+    prechecked_vector /= np.linalg.norm(prechecked_vector)
+    _write_checkpoint_shard(
+        checkpoint_dir,
+        "shard_000000.npz",
+        ids=["seq2"],
+        vectors=[prechecked_vector],
+        model_name="stub",
+    )
+
+    model, alphabet = _make_stub_model()
+    with patch(
+        "workflow.bgcflow.bgcflow.features.embed_esm2.load_esm_model",
+        return_value=(model, alphabet),
+    ):
+        ids, vectors = embed_sequences(
+            [("seq1", "AAA"), ("seq2", "BBB"), ("seq3", "CCC")],
+            model_name="stub",
+            batch_size=8,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+    assert ids == ["seq1", "seq2", "seq3"]
+    np.testing.assert_allclose(vectors[1], prechecked_vector, atol=1e-6)
+
+
+def test_checkpoint_shards_written_during_run(tmp_path):
+    """Checkpoint shards must appear on disk before the run finishes (crash-safety)."""
+    from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_sequences
+
+    checkpoint_dir = tmp_path / "ckpt"
+    model, alphabet = _make_stub_model()
+    with patch(
+        "workflow.bgcflow.bgcflow.features.embed_esm2.load_esm_model",
+        return_value=(model, alphabet),
+    ):
+        embed_sequences(
+            [("s1", "AAA"), ("s2", "BBB"), ("s3", "CCC")],
+            model_name="stub",
+            batch_size=1,
+            checkpoint_dir=str(checkpoint_dir),
+            checkpoint_every=1,
+        )
+
+    shard_files = sorted(checkpoint_dir.glob("shard_*.npz"))
+    assert len(shard_files) >= 3, "expected one shard per batch at checkpoint_every=1"
+    all_ids = set()
+    for shard in shard_files:
+        data = np.load(shard, allow_pickle=True)
+        all_ids.update(data["ids"].tolist())
+    assert all_ids == {"s1", "s2", "s3"}
+
+
+def test_checkpoint_model_mismatch_discards_stale_checkpoint(tmp_path):
+    """A checkpoint built with a different model must be ignored, not merged in."""
+    from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_sequences
+
+    checkpoint_dir = tmp_path / "ckpt"
+    stale_vector = np.full(DIM, 0.9, dtype=np.float32)
+    stale_vector /= np.linalg.norm(stale_vector)
+    _write_checkpoint_shard(
+        checkpoint_dir,
+        "shard_000000.npz",
+        ids=["seq1"],
+        vectors=[stale_vector],
+        model_name="some-other-model",
+    )
+
+    call_log = []
+    model, alphabet = _make_stub_model(call_log=call_log)
+    with patch(
+        "workflow.bgcflow.bgcflow.features.embed_esm2.load_esm_model",
+        return_value=(model, alphabet),
+    ):
+        ids, vectors = embed_sequences(
+            [("seq1", "MFIXEDSEQ")],
+            model_name="stub",
+            batch_size=8,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+    all_embedded_labels = [label for batch in call_log for label in batch]
+    assert (
+        "seq1" in all_embedded_labels
+    ), "stale checkpoint from a different model was reused"
+    manifest = json.loads((checkpoint_dir / "manifest.json").read_text())
+    assert manifest["model_name"] == "stub"

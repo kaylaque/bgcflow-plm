@@ -27,9 +27,9 @@ Reads antiSMASH region GBKs and the MIBiG `knownclusterblast` directory (already
 
 ## Running it (SSH gotcha)
 
-`build_index()` in `build_mibig_esm2_index.py` has **no checkpointing** — it embeds all MIBiG core proteins (currently 39,992) in one pass and only writes `index.faiss`/`metadata.parquet`/`model_version.txt` at the very end. If the process is killed mid-run (e.g. an SSH session drops, which SIGHUPs a foreground job), **all progress is lost silently** — no partial output, no error, no Snakemake lock left behind, it just looks like the target was never built.
+`embed_sequences()` in `embed_esm2.py` supports resumable checkpointing: pass `checkpoint_dir` (which `build_index()` in `build_mibig_esm2_index.py` does automatically, defaulting to `<output_dir>/.embed_checkpoint`) and it writes an atomic shard to disk every `checkpoint_every` batches (default 50). If the process is killed mid-run — e.g. an SSH session drops, which SIGHUPs a foreground job — re-running the exact same `build_index()` / `snakemake ... resources/mibig_esm2/index.faiss` command picks up from the last shard instead of starting over from the 39,992 MIBiG core proteins. The checkpoint is scratch state only: it's deleted automatically once `index.faiss`/`metadata.parquet`/`model_version.txt` are all written successfully. A checkpoint built with a different `model` than the current run is detected (via `manifest.json`) and discarded rather than silently mixed into the index.
 
-Always run it detached so an SSH drop can't kill it:
+Resume doesn't remove the value of running detached, though — a killed run still has to be *noticed and restarted* by someone, and losing your SSH session mid-attention is exactly when that's easy to miss. Still run it inside tmux:
 
 ```bash
 tmux new -s plm_index
