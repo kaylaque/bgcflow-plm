@@ -113,6 +113,57 @@ Here you can find pipeline keywords that you can run using the main Snakefile of
 | 17 | cblaster-bgc      | Build diamond database of BGCs for cblaster search.                                              | [cblaster](https://github.com/gamcil/cblaster)                                           |
 | 18 | bigscape          | Cluster BGCs using BiG-SCAPE                                                                     | [BiG-SCAPE](https://github.com/medema-group/BiG-SCAPE)                                   |
 | 19 | gecco          | GEne Cluster prediction with COnditional random fields.                                                                     | [GECCO](https://gecco.embl.de/index.html)
+| 20 | plm-novelty | Embed antiSMASH biosynthetic-core proteins with a frozen ESM2 and retrieve nearest MIBiG neighbors as an additive novelty side-channel. | [esm](https://github.com/facebookresearch/esm), [faiss](https://github.com/facebookresearch/faiss) |
+
+## PLM Novelty Retrieval (experimental)
+
+An additive protein-language-model (PLM) retrieval side-channel: it embeds antiSMASH's biosynthetic-core proteins with a frozen ESM2 model and retrieves their nearest neighbors in MIBiG, flagging proteins/regions with no close match. It **never modifies any antiSMASH call** — it's a separate, auditable novelty axis that sits alongside the existing DAG. See `docs/design-plm-retrieval-bgcflow.md` for the full design rationale and `docs/systems/plm-novelty.md` for the living operational reference (both are more detailed than this quick-start).
+
+**1. Enable it for a project** — add to the project's `rules:` block in its `project_config.yaml` (PEP format):
+```yaml
+rules:
+  plm-novelty: TRUE
+```
+
+**2. Model weights — nothing to download by hand.** The frozen ESM2 checkpoint (`esm2_t30_150M_UR50D` by default) is fetched automatically by `torch.hub` the first time it's used and cached outside the repo at `~/.cache/torch/hub/checkpoints/` (~600 MB, one-time, needs internet on first run only).
+
+**3. Build the MIBiG reference index — one-time, cached, and the slow step.** Every project needs a shared FAISS index of MIBiG's ~40,000 core proteins before it can produce PLM output. Building it is CPU-bound and can take several hours, so use the resilient wrapper rather than a bare `snakemake` call:
+```bash
+tmux new -s plm_index
+tools/run_mibig_embed.sh
+# Ctrl-b d to detach; tmux attach -t plm_index to check progress later
+```
+`tools/run_mibig_embed.sh` checkpoints progress, caps memory via a `systemd-run --user` cgroup (no sudo needed), and retries automatically if killed — safe to leave running unattended, including on a shared machine. Once `resources/mibig_esm2/index.faiss` exists, this step doesn't repeat unless `antismash_db_setup`'s MIBiG reference data refreshes.
+
+**4. Run BGCFlow.** With the index built and `plm-novelty: TRUE` set, a normal run produces PLM output alongside everything else:
+```bash
+bgcflow run
+```
+To build only the PLM output for one project:
+```bash
+snakemake --use-conda --cores 8 data/processed/<project_name>/plm_novelty/region_novelty_summary.tsv
+```
+Outputs land at `data/processed/<project_name>/plm_novelty/{bgc_novelty_retrieval.tsv, region_novelty_summary.tsv}`.
+
+**5. Build the report.**
+```bash
+bgcflow build report
+```
+The interactive report includes a PLM novelty section once the outputs above exist.
+
+**Tuning** — config knobs live under `rule_parameters.plm` in `config/config.yaml`:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `model` | `esm2_t30_150M_UR50D` | ESM2 checkpoint; CPU-tractable default |
+| `batch_size` | `8` | Max sequences per batch |
+| `max_tokens_per_batch` | `8192` | Token budget per batch — caps padded batch size so outlier-length proteins (MIBiG has megasynthases past 5,000 aa) don't blow up memory |
+| `device` | `auto` | `auto` / `cpu` / `cuda` — the packaged `plm_novelty` conda env pins `pytorch-cpu`, so `auto` never resolves to a GPU unless that env is rebuilt with a CUDA-enabled PyTorch |
+| `checkpoint_every` | `10` | Batches per checkpoint shard while building the MIBiG index |
+| `top_k` | `10` | Neighbors retrieved per query protein |
+| `distance_threshold` | `0.5` | Cosine distance above which a protein is flagged novel |
+
+**Status:** prototype plumbing, not yet validated science — see §8 of `docs/design-plm-retrieval-bgcflow.md` for explicit scope boundaries before trusting the novelty flag.
 
 ## Development & Funding
 
