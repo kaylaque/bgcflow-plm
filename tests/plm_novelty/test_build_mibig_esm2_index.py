@@ -39,7 +39,6 @@ def mock_embed():
 def test_index_and_metadata_row_count_match(mini_mibig_dir, tmp_path):
     """FAISS index ntotal must equal metadata.parquet row count (row-order invariant)."""
     import faiss
-
     from workflow.bgcflow.bgcflow.features.build_mibig_esm2_index import build_index
 
     out_dir = tmp_path / "index_out"
@@ -133,3 +132,33 @@ def test_custom_checkpoint_dir_honored_and_cleaned_up(mini_mibig_dir, tmp_path):
     _, kwargs = mock_embed.call_args
     assert kwargs.get("checkpoint_dir") == str(custom_checkpoint_dir)
     assert not custom_checkpoint_dir.exists()
+
+
+def test_checkpoint_every_defaults_to_10_batches(mini_mibig_dir, tmp_path):
+    """Default checkpoint interval must be small — less rework lost per kill."""
+    with patch(
+        "workflow.bgcflow.bgcflow.features.build_mibig_esm2_index.embed_sequences",
+        side_effect=_make_stub_embeddings(),
+    ) as mock_embed:
+        from workflow.bgcflow.bgcflow.features.build_mibig_esm2_index import build_index
+
+        build_index(str(mini_mibig_dir), str(tmp_path / "index_out7"))
+
+    _, kwargs = mock_embed.call_args
+    assert kwargs.get("checkpoint_every") == 10
+
+
+def test_custom_checkpoint_every_honored(mini_mibig_dir, tmp_path):
+    """A caller-supplied checkpoint_every must reach embed_sequences unchanged."""
+    with patch(
+        "workflow.bgcflow.bgcflow.features.build_mibig_esm2_index.embed_sequences",
+        side_effect=_make_stub_embeddings(),
+    ) as mock_embed:
+        from workflow.bgcflow.bgcflow.features.build_mibig_esm2_index import build_index
+
+        build_index(
+            str(mini_mibig_dir), str(tmp_path / "index_out8"), checkpoint_every=3
+        )
+
+    _, kwargs = mock_embed.call_args
+    assert kwargs.get("checkpoint_every") == 3

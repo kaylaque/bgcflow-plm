@@ -72,6 +72,8 @@ properties:
           device:
             type: string
             enum: [auto, cpu, cuda]
+          checkpoint_every:
+            type: integer
           top_k:
             type: integer
           distance_threshold:

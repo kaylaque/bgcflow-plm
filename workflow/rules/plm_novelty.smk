@@ -37,6 +37,7 @@ else:
             model_version="resources/mibig_esm2/model_version.txt",
         conda:
             "../envs/plm_novelty.yaml"
+        threads: 8
         log:
             "logs/plm_novelty/build_mibig_esm2_index.log",
         params:
@@ -49,6 +50,9 @@ else:
             device=config.get("rule_parameters", {}).get("plm", {}).get(
                 "device", "auto"
             ),
+            checkpoint_every=config.get("rule_parameters", {}).get("plm", {}).get(
+                "checkpoint_every", 10
+            ),
             output_dir="resources/mibig_esm2",
         shell:
             """
@@ -58,6 +62,7 @@ else:
                 --model {params.model} \
                 --batch-size {params.batch_size} \
                 --device {params.device} \
+                --checkpoint-every {params.checkpoint_every} \
                 2>> {log}
             """
 
@@ -95,6 +100,7 @@ else:
             npz="data/interim/plm_novelty/{version}/{strains}/embeddings.npz",
         conda:
             "../envs/plm_novelty.yaml"
+        threads: 4
         log:
             "logs/plm_novelty/embed/{version}/{strains}.log",
         params:

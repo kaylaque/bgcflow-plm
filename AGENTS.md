@@ -18,6 +18,7 @@ Router for any agent (Claude, Codex, Cursor, or otherwise) working in this repo.
 | Current task queue | `TODOS.md` |
 | Session/task work logs, handoff points | `docs/worksheets/` |
 | Cross-session feedback on how agents should work here | `docs/agent-feedback.md` |
+| Helper scripts for operational tasks (started sparse, grows on demand) | `tools/` |
 
 ## Greppable-header convention
 

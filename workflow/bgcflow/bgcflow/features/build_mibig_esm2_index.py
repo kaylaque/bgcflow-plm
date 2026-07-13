@@ -80,6 +80,7 @@ def build_index(
     batch_size=8,
     device="auto",
     checkpoint_dir=None,
+    checkpoint_every=10,
 ):
     """
     Build FAISS index from MIBiG GBK files and save to output_dir.
@@ -116,6 +117,7 @@ def build_index(
         batch_size=batch_size,
         device=device,
         checkpoint_dir=str(checkpoint_dir),
+        checkpoint_every=checkpoint_every,
     )
 
     dim = vectors.shape[1]
@@ -173,6 +175,13 @@ if __name__ == "__main__":
         metavar="DIR",
         help="Resume/checkpoint dir (default: <output-dir>/.embed_checkpoint)",
     )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Write a checkpoint shard every N batches (default: 10)",
+    )
     args = parser.parse_args()
     build_index(
         args.mibig_dir,
@@ -181,4 +190,5 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         device=args.device,
         checkpoint_dir=args.checkpoint_dir,
+        checkpoint_every=args.checkpoint_every,
     )
