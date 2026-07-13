@@ -74,6 +74,8 @@ properties:
             enum: [auto, cpu, cuda]
           checkpoint_every:
             type: integer
+          max_tokens_per_batch:
+            type: integer
           top_k:
             type: integer
           distance_threshold:

@@ -251,3 +251,71 @@ def test_checkpoint_model_mismatch_discards_stale_checkpoint(tmp_path):
     ), "stale checkpoint from a different model was reused"
     manifest = json.loads((checkpoint_dir / "manifest.json").read_text())
     assert manifest["model_name"] == "stub"
+
+
+def test_long_sequence_isolated_from_short_batch():
+    """A very long sequence must not drag short sequences into a huge padded batch.
+
+    Self-attention memory scales with the square of the padded batch length,
+    so grouping one 2000-residue outlier with 7 short sequences would force
+    all 8 through a 2000-token-wide forward pass.
+    """
+    from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_sequences
+
+    long_seq = ("long1", "M" * 2000)
+    short_seqs = [(f"short{i}", "M" * 10) for i in range(7)]
+    sequences = short_seqs + [long_seq]
+
+    call_log = []
+    model, alphabet = _make_stub_model(call_log=call_log)
+    with patch(
+        "workflow.bgcflow.bgcflow.features.embed_esm2.load_esm_model",
+        return_value=(model, alphabet),
+    ):
+        ids, vectors = embed_sequences(
+            sequences, model_name="stub", batch_size=8, max_tokens_per_batch=500
+        )
+
+    long_batch = next(b for b in call_log if "long1" in b)
+    assert long_batch == [
+        "long1"
+    ], f"long sequence was batched with others: {long_batch}"
+    assert len(ids) == 8
+
+
+def test_short_sequences_still_batch_up_to_batch_size():
+    """Without long outliers, batching still respects batch_size as before."""
+    from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_sequences
+
+    sequences = [(f"s{i}", "M" * 20) for i in range(17)]
+
+    call_log = []
+    model, alphabet = _make_stub_model(call_log=call_log)
+    with patch(
+        "workflow.bgcflow.bgcflow.features.embed_esm2.load_esm_model",
+        return_value=(model, alphabet),
+    ):
+        embed_sequences(
+            sequences, model_name="stub", batch_size=8, max_tokens_per_batch=100_000
+        )
+
+    batch_sizes = sorted((len(b) for b in call_log), reverse=True)
+    assert batch_sizes == [8, 8, 1], f"unexpected batch grouping: {batch_sizes}"
+
+
+def test_oversized_single_sequence_processed_alone():
+    """A sequence longer than the token budget by itself must still be processed, not skipped."""
+    from workflow.bgcflow.bgcflow.features.embed_esm2 import embed_sequences
+
+    huge_seq = ("huge1", "M" * 5000)
+    model, alphabet = _make_stub_model()
+    with patch(
+        "workflow.bgcflow.bgcflow.features.embed_esm2.load_esm_model",
+        return_value=(model, alphabet),
+    ):
+        ids, vectors = embed_sequences(
+            [huge_seq], model_name="stub", batch_size=8, max_tokens_per_batch=100
+        )
+
+    assert ids == ["huge1"]
+    assert vectors.shape[0] == 1

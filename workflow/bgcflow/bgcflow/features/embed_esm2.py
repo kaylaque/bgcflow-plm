@@ -89,6 +89,41 @@ def _write_checkpoint_shard(checkpoint_dir, shard_index, ids, vectors):
     os.replace(tmp_path, final_path)
 
 
+def _length_bucketed_batches(sequences, batch_size, max_tokens_per_batch):
+    """
+    Group (id, seq) pairs into batches respecting both batch_size and a
+    token budget (batch_size_so_far * longest_seq_in_batch).
+
+    ESM pads every sequence in a batch to the batch's longest member, and
+    self-attention memory scales with the square of that padded length —
+    protein datasets like MIBiG mix ~100-600aa domains with multi-thousand-
+    residue megasynthases (PKS/NRPS), so batching by count alone can put a
+    5000-residue outlier in the same batch as several short sequences and
+    force all of them through a catastrophically large forward pass. A
+    single sequence that alone exceeds the budget still gets its own batch
+    — it's processed, never silently dropped.
+    """
+    ordered = sorted(sequences, key=lambda pair: len(pair[1]))
+    batches = []
+    current = []
+    current_max_len = 0
+    for item in ordered:
+        item_len = len(item[1])
+        candidate_max_len = max(current_max_len, item_len)
+        candidate_size = len(current) + 1
+        over_budget = candidate_size * candidate_max_len > max_tokens_per_batch
+        if current and (candidate_size > batch_size or over_budget):
+            batches.append(current)
+            current = [item]
+            current_max_len = item_len
+        else:
+            current.append(item)
+            current_max_len = candidate_max_len
+    if current:
+        batches.append(current)
+    return batches
+
+
 def embed_sequences(
     sequences,
     model_name="esm2_t30_150M_UR50D",
@@ -96,9 +131,15 @@ def embed_sequences(
     device="auto",
     checkpoint_dir=None,
     checkpoint_every=50,
+    max_tokens_per_batch=None,
 ):
     """
     Embed a list of (id, sequence) tuples with ESM2.
+
+    Sequences are grouped into batches by length (see
+    _length_bucketed_batches) so a handful of very long outliers don't force
+    huge padding onto batches of otherwise-short sequences. max_tokens_per_batch
+    defaults to batch_size * 1024 when not given.
 
     If checkpoint_dir is given, already-embedded ids (from a prior, possibly
     interrupted run) are loaded and skipped, and progress is written to disk
@@ -109,6 +150,8 @@ def embed_sequences(
     always in the same order as the input `sequences`, regardless of resume.
     Empty input returns ([], np.zeros((0, dim), float32)).
     """
+    if max_tokens_per_batch is None:
+        max_tokens_per_batch = batch_size * 1024
     if not sequences:
         logging.warning("No sequences to embed — returning empty arrays")
         return [], np.zeros(
@@ -138,8 +181,8 @@ def embed_sequences(
         pending_vectors = []
         batches_since_checkpoint = 0
 
-        for i in range(0, len(remaining), batch_size):
-            batch = remaining[i : i + batch_size]
+        batches = _length_bucketed_batches(remaining, batch_size, max_tokens_per_batch)
+        for batch_index, batch in enumerate(batches):
             batch_labels, _, batch_tokens = batch_converter(batch)
             batch_tokens = batch_tokens.to(device)
 
@@ -159,7 +202,7 @@ def embed_sequences(
                 pending_vectors.append(vec)
 
             batches_since_checkpoint += 1
-            is_last_batch = i + batch_size >= len(remaining)
+            is_last_batch = batch_index == len(batches) - 1
             if checkpoint_dir is not None and (
                 batches_since_checkpoint >= checkpoint_every or is_last_batch
             ):
@@ -183,6 +226,7 @@ def embed_fasta_to_npz(
     model_name="esm2_t30_150M_UR50D",
     batch_size=8,
     device="auto",
+    max_tokens_per_batch=None,
 ):
     """Read a FASTA file, embed all sequences, save as .npz."""
     from Bio import SeqIO
@@ -206,7 +250,11 @@ def embed_fasta_to_npz(
         return
 
     ids, vectors = embed_sequences(
-        sequences, model_name=model_name, batch_size=batch_size, device=device
+        sequences,
+        model_name=model_name,
+        batch_size=batch_size,
+        device=device,
+        max_tokens_per_batch=max_tokens_per_batch,
     )
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,6 +275,14 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="esm2_t30_150M_UR50D", metavar="MODEL_ID")
     parser.add_argument("--batch-size", type=int, default=8, metavar="N")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    parser.add_argument(
+        "--max-tokens-per-batch",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Token budget per batch (default: batch_size * 1024) — caps padded "
+        "batch size so long outlier sequences don't blow up memory",
+    )
     args = parser.parse_args()
     embed_fasta_to_npz(
         args.fasta,
@@ -234,4 +290,5 @@ if __name__ == "__main__":
         model_name=args.model,
         batch_size=args.batch_size,
         device=args.device,
+        max_tokens_per_batch=args.max_tokens_per_batch,
     )

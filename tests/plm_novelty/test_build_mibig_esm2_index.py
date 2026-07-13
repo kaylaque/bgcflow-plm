@@ -162,3 +162,22 @@ def test_custom_checkpoint_every_honored(mini_mibig_dir, tmp_path):
 
     _, kwargs = mock_embed.call_args
     assert kwargs.get("checkpoint_every") == 3
+
+
+def test_max_tokens_per_batch_passed_to_embed_sequences(mini_mibig_dir, tmp_path):
+    """max_tokens_per_batch must reach embed_sequences — protects the MIBiG build
+    from megasynthase-length outlier proteins blowing up batch memory."""
+    with patch(
+        "workflow.bgcflow.bgcflow.features.build_mibig_esm2_index.embed_sequences",
+        side_effect=_make_stub_embeddings(),
+    ) as mock_embed:
+        from workflow.bgcflow.bgcflow.features.build_mibig_esm2_index import build_index
+
+        build_index(
+            str(mini_mibig_dir),
+            str(tmp_path / "index_out9"),
+            max_tokens_per_batch=4096,
+        )
+
+    _, kwargs = mock_embed.call_args
+    assert kwargs.get("max_tokens_per_batch") == 4096

@@ -81,6 +81,7 @@ def build_index(
     device="auto",
     checkpoint_dir=None,
     checkpoint_every=10,
+    max_tokens_per_batch=None,
 ):
     """
     Build FAISS index from MIBiG GBK files and save to output_dir.
@@ -118,6 +119,7 @@ def build_index(
         device=device,
         checkpoint_dir=str(checkpoint_dir),
         checkpoint_every=checkpoint_every,
+        max_tokens_per_batch=max_tokens_per_batch,
     )
 
     dim = vectors.shape[1]
@@ -182,6 +184,14 @@ if __name__ == "__main__":
         metavar="N",
         help="Write a checkpoint shard every N batches (default: 10)",
     )
+    parser.add_argument(
+        "--max-tokens-per-batch",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Token budget per batch (default: batch_size * 1024) — caps padded "
+        "batch size so megasynthase-length outlier proteins don't blow up memory",
+    )
     args = parser.parse_args()
     build_index(
         args.mibig_dir,
@@ -191,4 +201,5 @@ if __name__ == "__main__":
         device=args.device,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,
+        max_tokens_per_batch=args.max_tokens_per_batch,
     )

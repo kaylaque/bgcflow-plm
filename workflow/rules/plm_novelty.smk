@@ -53,6 +53,10 @@ else:
             checkpoint_every=config.get("rule_parameters", {}).get("plm", {}).get(
                 "checkpoint_every", 10
             ),
+            max_tokens_per_batch=config.get("rule_parameters", {}).get("plm", {}).get(
+                "max_tokens_per_batch",
+                config.get("rule_parameters", {}).get("plm", {}).get("batch_size", 8) * 1024,
+            ),
             output_dir="resources/mibig_esm2",
         shell:
             """
@@ -63,6 +67,7 @@ else:
                 --batch-size {params.batch_size} \
                 --device {params.device} \
                 --checkpoint-every {params.checkpoint_every} \
+                --max-tokens-per-batch {params.max_tokens_per_batch} \
                 2>> {log}
             """
 
